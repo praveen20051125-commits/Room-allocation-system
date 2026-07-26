@@ -1,7 +1,27 @@
+# Useful commands
+# Install dependencies:
+#   pip install -r requirements.txt
+#
+# Run locally (development):
+#   python server.py
+#
+# Run with Flask CLI:
+#   Windows:  set FLASK_APP=server.py && flask run --host=0.0.0.0 --port=5000
+#   Unix:     export FLASK_APP=server.py && flask run --host=0.0.0.0 --port=5000
+#
+# Production (Gunicorn):
+#   gunicorn server:app --bind 0.0.0.0:$PORT --workers 2
+#
+# Render start command (use in Render service settings or Procfile):
+#   web: gunicorn server:app --bind 0.0.0.0:$PORT --workers 2
+
 import io
 import os
 from flask import Flask, render_template_string, request, redirect, url_for
-from openpyxl import load_workbook
+try:
+    from openpyxl import load_workbook
+except ImportError:
+    load_workbook = None  # openpyxl is optional at import time; upload will check and report an error if missing
 import app as app_logic
 
 app = Flask(__name__)
@@ -23,6 +43,17 @@ HTML_TEMPLATE = """
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { padding: 10px; border-bottom: 1px solid #e4e8ee; text-align: left; }
     .badge { display: inline-block; padding: 5px 10px; border-radius: 999px; background: #e8f2ff; color: #1f6feb; }
+
+    /* Custom file input styles */
+    .file-input-wrapper { display: flex; gap: 10px; align-items: center; }
+    input[type="file"] { display: none; }
+    .btn-file {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 14px; border-radius: 8px; border: 1px solid #cfd8e3; background: white; color: #1f6feb; cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    .btn-file:hover { background: #f0f6ff; }
+    .file-name { color: #6b7280; font-size: 0.95rem; }
   </style>
 </head>
 <body>
@@ -34,7 +65,11 @@ HTML_TEMPLATE = """
   <div class="card">
     <h2>Upload Student Excel</h2>
     <form method="post" action="/upload" enctype="multipart/form-data">
-      <input type="file" name="file" required>
+      <div class="file-input-wrapper">
+        <input type="file" id="file" name="file" required>
+        <label for="file" class="btn-file">Choose file</label>
+        <span id="file-name" class="file-name">No file chosen</span>
+      </div>
       <select name="department" required>
         <option value="CSE">CSE</option>
         <option value="ECE">ECE</option>
@@ -81,6 +116,18 @@ HTML_TEMPLATE = """
       </tbody>
     </table>
   </div>
+
+  <script>
+    (function(){
+      const fileInput = document.getElementById('file');
+      const fileName = document.getElementById('file-name');
+      if (!fileInput) return;
+      fileInput.addEventListener('change', function(){
+        const name = this.files && this.files.length ? this.files[0].name : 'No file chosen';
+        fileName.textContent = name;
+      });
+    })();
+  </script>
 </body>
 </html>
 """
@@ -100,6 +147,13 @@ def upload():
     department = request.form.get("department", "")
     if not file or not department:
         return redirect(url_for("index"))
+
+    if load_workbook is None:
+        return (
+            "Missing dependency: openpyxl is required to upload Excel files.\n"
+            "Install it with: pip install openpyxl",
+            500,
+        )
 
     workbook = load_workbook(io.BytesIO(file.read()))
     sheet = workbook.active
